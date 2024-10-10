@@ -1,0 +1,220 @@
+---
+title: "HW 3"
+author: "Student Name"
+date: "9/24/2024"
+output:
+  html_document:
+    number_sections: true
+  pdf_document: default
+---
+
+#
+
+Let $E[X] = \mu$.  Show that $Var[X] := E[(X-E[X])^2] = E[X^2]-(E[X])^2$.  Note, all you have to do is show the second equality (the first is our definition from class). 
+```{r}
+"E[X-E[X]^2] = E[X^2 - 2XE[X]+(E[X])^2] By Foil
+            = E[X^2] - E[2XE[X]] + E[E[X]^2] Distribute the Expectation
+            = E[X^2] - 2E[X]E[X] + E[X]^2->  Because E[x] is constant
+            = E[X^2] - 2(E[X])^2 + E[X]^2  Multiplication of second term
+            = E[X^2] - (E[X])^2           Combine like terms"
+```
+
+            
+
+
+# 
+
+In the computational section of this homework, we will discuss support vector machines and tree-based methods.  I will begin by simulating some data for you to use with SVM. 
+
+```{r}
+library(e1071)
+set.seed(1) 
+x=matrix(rnorm(200*2),ncol=2)
+x[1:100,]=x[1:100,]+2
+x[101:150,]=x[101:150,]-2
+y=c(rep(1,150),rep(2,50))
+dat=data.frame(x=x,y=as.factor(y))
+plot(x, col=y)
+print(dat)
+
+```
+
+
+##
+
+Quite clearly, the above data is not linearly separable.  Create a training-testing partition with 100 random observations in the training partition.  Fit an svm on this training data using the radial kernel, and tuning parameters $\gamma=1$, cost $=1$.  Plot the svm on the training data.  
+
+```{r}
+set.seed(1)
+
+sample <- sample(1:nrow(dat), 0.5 * nrow(dat))
+train <- dat[sample, ]
+test <- dat[-sample, ]
+svm_fit = svm(y~., data =train, kernel = "radial", cost =1, gamma= 1)
+svm_fit
+plot(svm_fit, train)
+train
+```
+
+##
+
+Notice that the above decision boundary is decidedly non-linear.  It seems to perform reasonably well, but there are indeed some misclassifications.  Let's see if increasing the cost ^[Remember this is a parameter that decides how smooth your decision boundary should be] helps our classification error rate.  Refit the svm with the radial kernel, $\gamma=1$, and a cost of 10000.  Plot this svm on the training data. 
+
+```{r}
+svm_fit2 = svm(y~., data =train, kernel = "radial", cost =1000, gamma = 1)
+plot(svm_fit2, train)
+
+```
+
+##
+
+It would appear that we are better capturing the training data, but comment on the dangers (if any exist), of such a model. 
+
+This runs the risk of overfitting as the test data may not fit very well compared to the training data
+
+##
+
+Create a confusion matrix by using this svm to predict on the current testing partition.  Comment on the confusion matrix.  Is there any disparity in our classification results?    
+
+```{r}
+#remove eval = FALSE in above
+table(true=dat[-sample,"y"], pred=predict(svm_fit2, newdata=dat[-sample,]))
+
+```
+
+Yes, 1 seems to be predicted correctly much more than 2.
+##
+
+Is this disparity because of imbalance in the training/testing partition?  Find the proportion of class `2` in your training partition and see if it is broadly representative of the underlying 25\% of class 2 in the data as a whole.  
+
+```{r}
+y_column <- train[['y']]
+y_column_int <- (as.numeric(as.character(y_column)))
+count_2 <- sum(y_column_int == 2)
+count_2 / 100
+```
+
+*Student Response*
+There does not seem to be a huge difference between the distribution of Y in the training data versus the data as a whole.  There is only a difference of 4 between the 29 present in the training versus the 25 percent of the actual data
+##
+
+Let's try and balance the above to solutions via cross-validation.  Using the `tune` function, pass in the training data, and a list of the following cost and $\gamma$ values: {0.1, 1, 10, 100, 1000} and {0.5, 1,2,3,4}.  Save the output of this function in a variable called `tune.out`.  
+
+```{r}
+tune_cost <- c(0.1,  1, 10, 100, 1000)
+tune_gamma <- c(.5, 1,2,3,4)
+set.seed(1)
+tune.out <- tune(svm, 
+                 y ~ .,
+                 data = train,
+                 ranges = list(gamma = tune_gamma, cost = tune_cost))
+summary(tune.out)
+```
+
+I will take `tune.out` and use the best model according to error rate to test on our data.  I will report a confusion matrix corresponding to the 100 predictions.  
+
+
+```{r}
+table(true=dat[-sample,"y"], pred=predict(tune.out$best.model, newdata=dat[-sample,]))
+```
+
+##
+
+Comment on the confusion matrix.  How have we improved upon the model in question 2 and what qualifications are still necessary for this improved model.  
+The confusion matrix seems to assert our new svm model better fits the testing data.  The gamma and cost that we used initially are present in our tune function, so we know that our new gamma and our new cost variable will at least be as good as the ones we had before.  However, we still need to qualify that ther may be a better polynomial kernel or different combinations that we have not used yet. 
+
+# 
+Let's turn now to decision trees.  
+
+```{r}
+library(kmed)
+data(heart)
+library(tree)
+
+```
+
+## 
+
+The response variable is currently a categorical variable with four levels.  Convert heart disease into binary categorical variable.  Then, ensure that it is properly stored as a factor. 
+```{r}
+hist(heart$class)
+```
+
+```{r}
+heart$cp <- as.numeric(as.character(heart$cp))
+heart$sex <- as.factor(heart$sex)
+heart$fbs <- as.factor(heart$fbs)
+heart$exang <- as.factor(heart$exang)
+heart$class <- as.numeric(heart$class)
+High <- ifelse(heart$cp <= 2, "low", "high")
+High <- as.factor(High)
+heart$high <- High
+heart
+```
+
+## 
+
+Train a classification tree on a 240 observation training subset (using the seed I have set for you).  Plot the tree.  
+
+```{r}
+set.seed(101)
+sample_t <- sample(1:nrow(heart), 0.81 * nrow(heart))
+train_h <- heart[sample_t,]
+test_h <- heart[-sample_t,]
+library(rpart.plot)
+library(rpart)
+heart.tree <- tree(high ~. -cp, data = heart, subset = sample_t)
+par(xpd = NA) # otherwise on some devices the text is clipped
+
+plot(heart.tree)
+text(heart.tree, pretty = 0)
+```
+
+
+## 
+
+Use the trained model to classify the remaining testing points.  Create a confusion matrix to evaluate performance.  Report the classification error rate.  
+
+```{r}
+tree.pred <- predict(heart.tree, test_h, type = "class")
+conf_matrix <- table(True = test_h$high, Predicted = tree.pred)
+print(conf_matrix)
+38/(38+19)
+```
+
+##  
+
+Above we have a fully grown (bushy) tree.  Now, cross validate it using the `cv.tree` command.  Specify cross validation to be done according to the misclassification rate.  Choose an ideal number of splits, and plot this tree.  Finally, use this pruned tree to test on the testing set.  Report a confusion matrix and the misclassification rate.  
+
+```{r}
+set.seed(101)
+cv.heart <- cv.tree(heart.tree, FUN = prune.misclass)
+print(cv.heart)
+plot(cv.heart$size, cv.heart$dev, type = "b", xlab = "Tree Size", ylab = "Deviance")
+prune.heart_tree <- prune.misclass(heart.tree, best = 10)
+plot(prune.heart_tree)
+text(prune.heart_tree, pretty=0)
+tree.pred_2 <- predict(prune.heart_tree, newdata = test_h, type = "class")
+conf_matrix <- table(True = test_h$high, Predicted = tree.pred_2)
+print(conf_matrix)
+```
+
+```{r}
+tree.pred <- predict(heart.tree, test_h, type = "class")
+conf_matrix <- table(True = test_h$high, Predicted = tree.pred_2)
+print(conf_matrix)
+38/(38+19)
+
+```
+
+##
+
+Discuss the trade-off in accuracy and interpretability in pruning the above tree. 
+
+*Student Input *
+In this instance there was no differnece between misclassification rate before and after pruning, this was able to help us classify without needing such a long tree, and makes the tree easier to use/work with.  However, typically long overfit trees do not test well, and this new one while shorter and easier to interpret, may be more generalizeable.  
+## 
+
+Discuss the ways a decision tree could manifest algorithmic bias.  
+Decision trees mostly manifest algorithmic bias through fully grown trees which are not applicable and overfit the test data, or training data which does not reflect the true data.  
+*Student Answer*
